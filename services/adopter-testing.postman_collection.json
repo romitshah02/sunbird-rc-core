@@ -132,6 +132,26 @@
     {
       "key": "crud_access_token",
       "value": ""
+    },
+    {
+      "key": "pex_vp_transaction_id",
+      "value": ""
+    },
+    {
+      "key": "pex_vp_request_uri",
+      "value": ""
+    },
+    {
+      "key": "pex_vp_nonce",
+      "value": ""
+    },
+    {
+      "key": "pex_vp_state",
+      "value": ""
+    },
+    {
+      "key": "pex_vp_jwt",
+      "value": ""
     }
   ],
   "item": [
@@ -1237,7 +1257,7 @@
             "url": "{{identity_base}}/utils/sign-jwt",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"DID\": \"{{holder_did}}\",\n  \"payload\": {\n    \"aud\": \"{{oid4vc_base}}\",\n    \"nonce\": \"{{vp_nonce}}\",\n    \"vp\": { \"verifiableCredential\": [\"{{issued_credential}}\"] }\n  },\n  \"header\": { \"typ\": \"JWT\" }\n}"
+              "raw": "{\n  \"DID\": \"{{holder_did}}\",\n  \"payload\": {\n    \"aud\": \"redirect_uri:{{oid4vc_base}}/vp/response\",\n    \"nonce\": \"{{vp_nonce}}\",\n    \"vp\": { \"verifiableCredential\": [\"{{issued_credential}}\"] }\n  },\n  \"header\": { \"typ\": \"JWT\" }\n}"
             }
           },
           "event": [
@@ -1265,7 +1285,7 @@
             "url": "{{oid4vc_base}}/vp/response",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"state\": \"{{vp_state}}\",\n  \"vp_token\": \"{{vp_jwt}}\"\n}"
+              "raw": "{\n  \"state\": \"{{vp_state}}\",\n  \"vp_token\": \"{\\\"pilot_cred\\\": [\\\"{{vp_jwt}}\\\"]}\"\n}"
             }
           },
           "event": [
@@ -1332,8 +1352,8 @@
               "script": {
                 "exec": [
                   "const json = pm.response.json();",
-                  "pm.collectionVariables.set('vp_transaction_id', json.transaction_id);",
-                  "pm.collectionVariables.set('vp_request_uri', json.request_uri);"
+                  "pm.collectionVariables.set('pex_vp_transaction_id', json.transaction_id);",
+                  "pm.collectionVariables.set('pex_vp_request_uri', json.request_uri);"
                 ]
               }
             }
@@ -1343,7 +1363,7 @@
           "name": "Wallet fetches request object",
           "request": {
             "method": "GET",
-            "url": "{{vp_request_uri}}"
+            "url": "{{pex_vp_request_uri}}"
           },
           "event": [
             {
@@ -1351,8 +1371,8 @@
               "script": {
                 "exec": [
                   "const payload = pm.response.json();",
-                  "pm.collectionVariables.set('vp_nonce', payload.nonce);",
-                  "pm.collectionVariables.set('vp_state', payload.state);",
+                  "pm.collectionVariables.set('pex_vp_nonce', payload.nonce);",
+                  "pm.collectionVariables.set('pex_vp_state', payload.state);",
                   "pm.test('request object has nonce+state+presentation_definition', () => {",
                   "  pm.expect(payload.nonce).to.not.be.undefined;",
                   "  pm.expect(payload.presentation_definition).to.not.be.undefined;",
@@ -1375,7 +1395,7 @@
             "url": "{{identity_base}}/utils/sign-jwt",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"DID\": \"{{holder_did}}\",\n  \"payload\": {\n    \"aud\": \"{{oid4vc_base}}\",\n    \"nonce\": \"{{vp_nonce}}\",\n    \"vp\": { \"verifiableCredential\": [\"{{issued_credential}}\"] }\n  },\n  \"header\": { \"typ\": \"JWT\" }\n}"
+              "raw": "{\n  \"DID\": \"{{holder_did}}\",\n  \"payload\": {\n    \"aud\": \"redirect_uri:{{oid4vc_base}}/vp/response\",\n    \"nonce\": \"{{pex_vp_nonce}}\",\n    \"vp\": { \"verifiableCredential\": [\"{{issued_credential}}\"] }\n  },\n  \"header\": { \"typ\": \"JWT\" }\n}"
             }
           },
           "event": [
@@ -1384,7 +1404,7 @@
               "script": {
                 "exec": [
                   "const json = pm.response.json();",
-                  "pm.collectionVariables.set('vp_jwt', json.jwt);"
+                  "pm.collectionVariables.set('pex_vp_jwt', json.jwt);"
                 ]
               }
             }
@@ -1403,7 +1423,7 @@
             "url": "{{oid4vc_base}}/vp/response",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"state\": \"{{vp_state}}\",\n  \"vp_token\": \"{{vp_jwt}}\",\n  \"presentation_submission\": {\n    \"id\": \"{{$guid}}\",\n    \"definition_id\": \"pex_pilot\",\n    \"descriptor_map\": [{ \"id\": \"pilot_cred\", \"format\": \"ldp_vc\", \"path\": \"$\" }]\n  }\n}"
+              "raw": "{\n  \"state\": \"{{pex_vp_state}}\",\n  \"vp_token\": \"{{pex_vp_jwt}}\",\n  \"presentation_submission\": {\n    \"id\": \"{{$guid}}\",\n    \"definition_id\": \"pex_pilot\",\n    \"descriptor_map\": [{ \"id\": \"pilot_cred\", \"format\": \"ldp_vc\", \"path\": \"$\" }]\n  }\n}"
             }
           },
           "event": [
@@ -1424,7 +1444,7 @@
           "name": "Verifier polls status",
           "request": {
             "method": "GET",
-            "url": "{{oid4vc_base}}/vp/status/{{vp_transaction_id}}"
+            "url": "{{oid4vc_base}}/vp/status/{{pex_vp_transaction_id}}"
           },
           "event": [
             {
@@ -1505,7 +1525,7 @@
             "url": "{{oid4vc_base}}/vp/response",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"state\": \"{{vp_state}}\",\n  \"vp_token\": \"{{vp_jwt}}\"\n}"
+              "raw": "{\n  \"state\": \"{{pex_vp_state}}\",\n  \"vp_token\": \"{{pex_vp_jwt}}\"\n}"
             }
           },
           "event": [
@@ -1582,7 +1602,7 @@
             "url": "{{identity_base}}/utils/sign-jwt",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"DID\": \"{{impostor_did}}\",\n  \"payload\": {\n    \"aud\": \"{{oid4vc_base}}\",\n    \"nonce\": \"{{vp_nonce}}\",\n    \"vp\": { \"verifiableCredential\": [\"{{issued_credential}}\"] }\n  },\n  \"header\": { \"typ\": \"JWT\" }\n}"
+              "raw": "{\n  \"DID\": \"{{impostor_did}}\",\n  \"payload\": {\n    \"aud\": \"redirect_uri:{{oid4vc_base}}/vp/response\",\n    \"nonce\": \"{{vp_nonce}}\",\n    \"vp\": { \"verifiableCredential\": [\"{{issued_credential}}\"] }\n  },\n  \"header\": { \"typ\": \"JWT\" }\n}"
             }
           },
           "event": [
@@ -1609,7 +1629,7 @@
             "url": "{{oid4vc_base}}/vp/response",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"state\": \"{{vp_state}}\",\n  \"vp_token\": \"{{vp_jwt}}\"\n}"
+              "raw": "{\n  \"state\": \"{{vp_state}}\",\n  \"vp_token\": \"{\\\"pilot_cred\\\": [\\\"{{vp_jwt}}\\\"]}\"\n}"
             }
           },
           "event": [
