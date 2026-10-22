@@ -79,6 +79,14 @@ public interface IDefinitionsManager {
         return excludeFields;
     }
     List<OwnershipsAttributes> getOwnershipAttributes(String entity);
+    default Map<String, String> getEntityReferenceFields(String entity) {
+        Definition entityDefinition = getDefinitionMap().get(entity);
+        if (entityDefinition != null) {
+            return entityDefinition.getOsSchemaConfiguration().getEntityReferences();
+        } else {
+            return Collections.emptyMap();
+        }
+    }
     default Object getCredentialTemplate(String entityName) {
         return getDefinition(entityName).getOsSchemaConfiguration().getCredentialTemplate();
     }

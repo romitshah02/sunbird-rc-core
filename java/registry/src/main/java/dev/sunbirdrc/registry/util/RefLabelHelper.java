@@ -8,6 +8,22 @@ public class RefLabelHelper {
     private static String ARRAY_SEPARATOR = "_arr_";
 
     /**
+     * Prefix for edge labels formed for a declared entityReferences field
+     * (dev.sunbirdrc.registry.util.OSSchemaConfiguration#entityReferences).
+     * Distinct from the plain "field_id" / "field_arr_id" shapes above.
+     */
+    public static final String REFERENCE_EDGE_PREFIX = "ref_";
+
+    /**
+     * Generates the edge label for a declared entity-reference field.
+     * @param field - the schema field name holding the reference
+     * @return
+     */
+    public static String getReferenceEdgeLabel(String field) {
+        return REFERENCE_EDGE_PREFIX + field;
+    }
+
+    /**
      * Generates the key that could be persisted for a given reference
      * and id
      * @param referenceName - the other reference

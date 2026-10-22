@@ -247,6 +247,7 @@ public class RegistryServiceImpl implements RegistryService {
                 Graph graph = osGraph.getGraphStore();
                 tx = dbProvider.startTransaction(graph);
                 entityId = registryDao.addEntity(graph, rootNode);
+                resolveEntityReferences(dbProvider, graph, vertexLabel, entityId, rootNode.get(vertexLabel));
                 if (vertexLabel.equals(Schema)) {
                     String definitionName = rootNode.get(Schema).get(SchemaName).asText();
                     entityParenter.ensureKnownParenter(definitionName, graph, dbProvider, shard.getShardId());
@@ -290,6 +291,36 @@ public class RegistryServiceImpl implements RegistryService {
         return entityId;
     }
 
+
+    /**
+     * For each schema-declared entityReferences field present on entityNode, resolves the
+     * referenced target entity (must already exist) and forms a real graph edge from the
+     * entity's vertex to it. Throws RecordNotFoundException (before the caller commits) if
+     * a referenced target does not exist, so the whole write rolls back.
+     */
+    private void resolveEntityReferences(DatabaseProvider databaseProvider, Graph graph, String vertexLabel, String entityId, JsonNode entityNode) throws RecordNotFoundException {
+        Map<String, String> entityReferenceFields = definitionsManager.getEntityReferenceFields(vertexLabel);
+        if (entityReferenceFields.isEmpty() || entityNode == null) {
+            return;
+        }
+        VertexReader vertexReader = new VertexReader(databaseProvider, graph, ReadConfiguratorFactory.getOne(false), uuidPropertyName, definitionsManager, expandReferenceObj);
+        VertexWriter vertexWriter = new VertexWriter(graph, databaseProvider, uuidPropertyName);
+        for (Map.Entry<String, String> entry : entityReferenceFields.entrySet()) {
+            String field = entry.getKey();
+            String targetEntityType = entry.getValue();
+            JsonNode valueNode = entityNode.get(field);
+            if (valueNode == null || !valueNode.isValueNode() || StringUtils.isBlank(valueNode.asText())) {
+                continue;
+            }
+            String referencedId = valueNode.asText();
+            Vertex targetVertex = vertexReader.getVertex(targetEntityType, referencedId);
+            if (targetVertex == null) {
+                throw new RecordNotFoundException("referenced " + targetEntityType + " '" + referencedId + "' does not exist");
+            }
+            Vertex newVertex = vertexReader.getVertex(vertexLabel, entityId);
+            vertexWriter.addEdge(RefLabelHelper.getReferenceEdgeLabel(field), newVertex, targetVertex);
+        }
+    }
 
     private void generateCredentials(JsonNode rootNode, JsonNode inputNode, String vertexLabel) throws SignatureException.UnreachableException, SignatureException.CreationException {
         Object credentialTemplate = definitionsManager.getCredentialTemplate(vertexLabel);
@@ -382,6 +413,10 @@ public class RegistryServiceImpl implements RegistryService {
 
                 // The entity type is a child and so could be different from parent entity type.
                 doUpdate(shard, graph, registryDao, vr, inputNode.get(entityType), entityType, null);
+
+                // Re-resolve/form edges for any entityReferences fields present in this update.
+                // Uses rootId (the root entity's own uuid) since entityType/id here may be a child node.
+                resolveEntityReferences(databaseProvider, graph, parentEntityType, rootId, mergedNode.get(parentEntityType));
 
                 if (entityType.equals(Schema)) {
                     schemaService.updateSchema(mergedNode);

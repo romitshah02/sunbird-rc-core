@@ -20,6 +20,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -213,8 +214,9 @@ public class VertexReader {
      *
      * @param vertex
      * @param currLevel
+     * @param visitedUuids uuids already visited in this top-level read, to guard against graph cycles
      */
-    private void loadOtherVertices(Vertex vertex, int currLevel) {
+    private void loadOtherVertices(Vertex vertex, int currLevel, Set<String> visitedUuids) {
         // NOTE: We can load selective vertices, but we don't know the labels
         // here.
         // So in the process, we will have loaded signature nodes as well here
@@ -225,6 +227,11 @@ public class VertexReader {
             Vertex currVertex = otherVertices.next();
             if(currVertex.property(Constants.STATUS_KEYWORD).isPresent() &&
                     currVertex.property(Constants.STATUS_KEYWORD).value().equals(Constants.STATUS_INACTIVE)){
+                continue;
+            }
+            String currUuid = databaseProvider.getId(currVertex);
+            if (!visitedUuids.add(currUuid)) {
+                logger.debug("Already visited vertex {}, skipping to avoid cycle", currUuid);
                 continue;
             }
             VertexProperty internalTypeProp = currVertex.property(Constants.INTERNAL_TYPE_KEYWORD);
@@ -248,12 +255,12 @@ public class VertexReader {
                     // Not incrementing levels here, because it is we who
                     // inserted a blank array_node
                     // for data modelling.
-                    loadOtherVertices(currVertex, tempCurrLevel);
+                    loadOtherVertices(currVertex, tempCurrLevel, visitedUuids);
                 }
 
                 if (canLoadVertex(++tempCurrLevel, configurator.getDepth())) {
                     logger.debug("Going to load children of {}", currVertex.label());
-                    loadOtherVertices(currVertex, tempCurrLevel);
+                    loadOtherVertices(currVertex, tempCurrLevel, visitedUuids);
                     logger.debug("End load children of {}", currVertex.label());
                     tempCurrLevel = currLevel;
                 }
@@ -267,9 +274,9 @@ public class VertexReader {
         });
     }
 
-    private ArrayNode expandChildObject(ObjectNode entityNode, int currentLevel) {
+    private ArrayNode expandChildObject(ObjectNode entityNode, int currentLevel, Set<String> visitedUuids) {
         if (currentLevel <= Constants.MAX_EXPAND_LEVEL) {
-            return expandChildObject(entityNode, null, currentLevel);
+            return expandChildObject(entityNode, null, currentLevel, visitedUuids);
         } else {
             logger.warn("Maximum expand level reached");
             return JsonNodeFactory.instance.arrayNode();
@@ -281,8 +288,9 @@ public class VertexReader {
      * content in the right paths
      *
      * @param entityNode
+     * @param visitedUuids uuids already visited in this top-level read, to guard against graph cycles
      */
-    private ArrayNode expandChildObject(ObjectNode entityNode, List<String> processedUUIDs, int currentLevel) {
+    private ArrayNode expandChildObject(ObjectNode entityNode, List<String> processedUUIDs, int currentLevel, Set<String> visitedUuids) {
         ArrayNode resultArr = JsonNodeFactory.instance.arrayNode();
         if (currentLevel <= Constants.MAX_EXPAND_LEVEL) {
             if (entityNode == null) {
@@ -320,10 +328,10 @@ public class VertexReader {
                                 logger.debug("Provision for expansion");
                             }
 
-                            if (!processedUUIDs.contains(uuidVal)) {
+                            if (!processedUUIDs.contains(uuidVal) && visitedUuids.add(uuidVal)) {
                                 processedUUIDs.add(uuidVal);
                                 ObjectNode tmp = uuidNodeMap.get(uuidVal);
-                                ArrayNode result = expandChildObject(tmp, processedUUIDs, currentLevel + 1);
+                                ArrayNode result = expandChildObject(tmp, processedUUIDs, currentLevel + 1, visitedUuids);
                                 entityNode.setAll(tmp);
                             }
                         } else {
@@ -342,7 +350,9 @@ public class VertexReader {
                                         uuidPropertyValue = ArrayHelper.unquoteString(node.asText());
                                     }
                                     ObjectNode ovalue = uuidNodeMap.getOrDefault(uuidPropertyValue, null);
-                                    expandChildObject(ovalue, currentLevel + 1);
+                                    if (visitedUuids.add(uuidPropertyValue)) {
+                                        expandChildObject(ovalue, currentLevel + 1, visitedUuids);
+                                    }
                                     if (ovalue != null) {
                                         resultArr.add(ovalue);
                                     } else {
@@ -353,7 +363,7 @@ public class VertexReader {
                         }
                     } else if (entry.isObject()) {
                         logger.debug("Field {} is an object. Expanding further.", entry);
-                        ArrayNode expandChildObject = expandChildObject((ObjectNode) entry, currentLevel + 1);
+                        ArrayNode expandChildObject = expandChildObject((ObjectNode) entry, currentLevel + 1, visitedUuids);
                         if (expandChildObject.size() == 0 && entityNode.get(field).size() == 0) {
                             entityNode.remove(field);
                         }
@@ -472,8 +482,11 @@ public class VertexReader {
             rootNode.remove(Constants.SIGNATURES_STR);
         }
 
+        Set<String> visitedUuids = new HashSet<>();
+        visitedUuids.add(databaseProvider.getId(rootVertex));
+
         if (configurator.getDepth() > 0) {
-            loadOtherVertices(rootVertex, currLevel);
+            loadOtherVertices(rootVertex, currLevel, visitedUuids);
         }
 
         printUuidNodeMap();
@@ -484,7 +497,7 @@ public class VertexReader {
         // For the entity Node, now go and replace the array values with actual
         // objects.
         // The properties could exist anywhere. Refer to the local arrMap.
-        expandChildObject(rootNode, 0);
+        expandChildObject(rootNode, 0, visitedUuids);
         if(expandReferenceObj)
             expandReferenceNodes(rootNode);
         entityNode.set(entityType, rootNode);

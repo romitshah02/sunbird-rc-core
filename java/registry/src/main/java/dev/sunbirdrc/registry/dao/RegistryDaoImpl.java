@@ -7,6 +7,7 @@ import dev.sunbirdrc.registry.middleware.util.Constants;
 import dev.sunbirdrc.registry.sink.DatabaseProvider;
 import dev.sunbirdrc.registry.util.IDefinitionsManager;
 import dev.sunbirdrc.registry.util.ReadConfigurator;
+import dev.sunbirdrc.registry.util.RefLabelHelper;
 import dev.sunbirdrc.registry.util.TypePropertyHelper;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Graph;
@@ -150,7 +151,9 @@ public class RegistryDaoImpl implements IRegistryDao {
     public void hardDeleteEntity(Vertex vertex) {
         if (vertex != null) {
             vertex.edges(Direction.OUT).forEachRemaining(d -> {
-                this.hardDeleteEntity(d.inVertex());
+                if (!d.label().startsWith(RefLabelHelper.REFERENCE_EDGE_PREFIX)) {
+                    this.hardDeleteEntity(d.inVertex());
+                }
             });
             vertex.remove();
         } else {
