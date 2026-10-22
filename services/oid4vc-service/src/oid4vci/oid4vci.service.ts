@@ -144,7 +144,9 @@ export class Oid4vciService {
           scope: slugifyVct(cfg.name),
           cryptographic_binding_methods_supported: ['did:web', 'did:key', 'jwk'],
           credential_signing_alg_values_supported: isMdoc ? ['ES256'] : ['ES256', 'Ed25519Signature2020'],
-          proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['ES256'] } },
+          proof_types_supported: {
+            jwt: { proof_signing_alg_values_supported: isMdoc ? ['ES256'] : ['ES256', 'EdDSA'] },
+          },
           // vct MUST be a URI if it contains a ':', and — found live against
           // walt.id's wallet — some wallets resolve EVERY vct as a URL
           // regardless of that spec carve-out, so a bare display name like
@@ -1064,6 +1066,14 @@ export class Oid4vciService {
         ? { docType: session.docType, namespaces: this.buildMdocNamespaces(session) }
         : {}),
     });
+
+    if (Array.isArray(res.credential?.['@context'])) {
+      res.credential['@context'] = res.credential['@context'].map((entry: string) =>
+        typeof entry === 'string' && entry.startsWith(this.config.internalUrl)
+          ? entry.replace(this.config.internalUrl, this.config.publicUrl)
+          : entry,
+      );
+    }
     return res.credential;
   }
 
