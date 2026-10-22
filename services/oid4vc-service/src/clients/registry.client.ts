@@ -96,8 +96,7 @@ export class RegistryClient {
     subject?: Record<string, any>;
     sources: ClaimSource[];
   }> {
-    const { subjectEntity, subjectKey, subjectScopeField, subjectScopeValue, related } =
-      this.config.registrySources;
+    const { subjectEntity, subjectKey, related } = this.config.registrySources;
     if (!subjectEntity || !subjectKey) {
       throw new Error(
         'registry claim sources are not configured: set REGISTRY_SUBJECT_ENTITY and ' +
@@ -107,16 +106,7 @@ export class RegistryClient {
     }
 
     const [subject, ...relatedRecords] = await Promise.all([
-      this.search(
-        subjectEntity,
-        {
-          [subjectKey]: { eq: subjectId },
-          ...(subjectScopeField && subjectScopeValue
-            ? { [subjectScopeField]: { eq: subjectScopeValue } }
-            : {}),
-        },
-        1,
-      ).then((rows) => rows[0]),
+      this.findOne(subjectEntity, subjectKey, subjectId),
       ...related.map((spec) =>
         this.search(spec.entity, { [subjectKey]: { eq: subjectId } })
           // An entity a deployment has not created answers 4xx. That must not
