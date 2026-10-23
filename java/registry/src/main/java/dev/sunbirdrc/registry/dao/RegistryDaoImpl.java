@@ -151,7 +151,10 @@ public class RegistryDaoImpl implements IRegistryDao {
     public void hardDeleteEntity(Vertex vertex) {
         if (vertex != null) {
             vertex.edges(Direction.OUT).forEachRemaining(d -> {
-                if (!d.label().startsWith(RefLabelHelper.REFERENCE_EDGE_PREFIX)) {
+                // Property check, not the label prefix: a schema field literally named "ref"
+                // can produce the same "ref_<uuidPropertyName>" label as a plain containment
+                // edge, so the label alone can't safely gate cascade-delete.
+                if (!d.property(RefLabelHelper.REFERENCE_EDGE_MARKER).isPresent()) {
                     this.hardDeleteEntity(d.inVertex());
                 }
             });

@@ -106,27 +106,39 @@ export class RegistryClient {
       );
     }
 
-    const [subject, ...relatedRecords] = await Promise.all([
-      this.search(
-        subjectEntity,
-        {
-          [subjectKey]: { eq: subjectId },
-          ...(subjectScopeField && subjectScopeValue
-            ? { [subjectScopeField]: { eq: subjectScopeValue } }
-            : {}),
-        },
-        1,
-      ).then((rows) => rows[0]),
-      ...related.map((spec) =>
-        this.search(spec.entity, { [subjectKey]: { eq: subjectId } })
-          // An entity a deployment has not created answers 4xx. That must not
-          // fail issuance of credentials which never needed it: treated as "no
-          // records", so the resolver reports any REQUIRED claim it fed as
-          // missing, which names the real problem instead of a 500.
-          .catch(() => [] as Record<string, any>[])
-          .then((rows) => this.pickOne(rows, spec)),
+    const subject = await this.search(
+      subjectEntity,
+      {
+        [subjectKey]: { eq: subjectId },
+        ...(subjectScopeField && subjectScopeValue
+          ? { [subjectScopeField]: { eq: subjectScopeValue } }
+          : {}),
+      },
+      1,
+    ).then((rows) => rows[0]);
+
+    // Related entities are reached by the subject's own osid (the same
+    // reference `entityReferences` forms a real edge for), not by re-matching
+    // subjectKey — a related entity need not even have that field. Must run
+    // after the subject resolves, since its osid is the filter value.
+    //
+    const rawOsid: string | undefined = subject?.['osid'];
+    const subjectOsid = rawOsid?.match(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    )?.[0] ?? rawOsid;
+    const relatedRecords = await Promise.all(
+      related.map((spec) =>
+        !subjectOsid
+          ? Promise.resolve([] as Record<string, any>[])
+          : this.search(spec.entity, { [spec.filterField]: { eq: subjectOsid } })
+              // An entity a deployment has not created answers 4xx. That must not
+              // fail issuance of credentials which never needed it: treated as "no
+              // records", so the resolver reports any REQUIRED claim it fed as
+              // missing, which names the real problem instead of a 500.
+              .catch(() => [] as Record<string, any>[])
+              .then((rows) => this.pickOne(rows, spec)),
       ),
-    ]);
+    );
 
     return {
       subject,

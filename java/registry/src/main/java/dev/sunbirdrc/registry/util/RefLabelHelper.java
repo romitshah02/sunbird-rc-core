@@ -10,9 +10,20 @@ public class RefLabelHelper {
     /**
      * Prefix for edge labels formed for a declared entityReferences field
      * (dev.sunbirdrc.registry.util.OSSchemaConfiguration#entityReferences).
-     * Distinct from the plain "field_id" / "field_arr_id" shapes above.
+     * For readability/debugging only — NOT the safety check cascade-delete relies
+     * on, since a field literally named "ref" can produce this same prefix via
+     * getLabel's "field_id" shape (e.g. "ref_osid"). Use REFERENCE_EDGE_MARKER
+     * (an edge property, not a label substring) to actually distinguish a
+     * reference edge from a containment edge.
      */
     public static final String REFERENCE_EDGE_PREFIX = "ref_";
+
+    /**
+     * Edge property key marking an edge as a declared entity-reference (not
+     * containment). Collision-proof unlike a label prefix: it is never derived
+     * from a schema field name, so no field name can produce it by accident.
+     */
+    public static final String REFERENCE_EDGE_MARKER = "__osEntityReference__";
 
     /**
      * Generates the edge label for a declared entity-reference field.

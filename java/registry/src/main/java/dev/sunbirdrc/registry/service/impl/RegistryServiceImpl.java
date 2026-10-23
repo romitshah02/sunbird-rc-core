@@ -31,6 +31,7 @@ import dev.sunbirdrc.registry.sink.OSGraph;
 import dev.sunbirdrc.registry.sink.shard.Shard;
 import dev.sunbirdrc.registry.util.*;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.Transaction;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
@@ -312,13 +313,23 @@ public class RegistryServiceImpl implements RegistryService {
             if (valueNode == null || !valueNode.isValueNode() || StringUtils.isBlank(valueNode.asText())) {
                 continue;
             }
-            String referencedId = valueNode.asText();
+            // The field's value is the PUBLIC osid, which may carry a "shardLabel-" prefix
+            // (e.g. "1-236ed4d1-..."); the vertex's own uuid property is the bare uuid, the
+            // same parsing every existing read/update path applies before a vertex lookup.
+            String referencedId = RecordIdentifier.parse(valueNode.asText()).getUuid();
             Vertex targetVertex = vertexReader.getVertex(targetEntityType, referencedId);
-            if (targetVertex == null) {
+            // getVertex does not filter by type on every DatabaseProvider (e.g. Neo4j looks up
+            // by raw id only) — verify the returned vertex is actually of targetEntityType so a
+            // same-id, wrong-type vertex can't silently satisfy the reference.
+            if (targetVertex == null || !targetEntityType.equals(targetVertex.label())) {
                 throw new RecordNotFoundException("referenced " + targetEntityType + " '" + referencedId + "' does not exist");
             }
             Vertex newVertex = vertexReader.getVertex(vertexLabel, entityId);
-            vertexWriter.addEdge(RefLabelHelper.getReferenceEdgeLabel(field), newVertex, targetVertex);
+            Edge referenceEdge = vertexWriter.addEdge(RefLabelHelper.getReferenceEdgeLabel(field), newVertex, targetVertex);
+            // The label prefix alone is not collision-proof (a field literally named "ref" can
+            // produce the same "ref_<uuidPropertyName>" shape as a plain containment edge) — this
+            // property is the actual, collision-proof signal cascade-delete checks.
+            referenceEdge.property(RefLabelHelper.REFERENCE_EDGE_MARKER, true);
         }
     }
 

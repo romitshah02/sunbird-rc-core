@@ -4,6 +4,13 @@
 export interface RelatedEntitySpec {
   /** Registry entity name, e.g. LandParcel. */
   entity: string;
+  /**
+   * Field ON THIS ENTITY holding the subject's own osid (e.g. "studentOsid"),
+   * not the subject's subjectKey value — a related entity is reached by the
+   * same osid reference the registry's entityReferences feature forms a real
+   * edge for, not by re-matching contactEmail/whatever subjectKey is.
+   */
+  filterField: string;
   /** Field to sort on, so "the holder's current one" is deterministic. */
   orderBy?: string;
   /** Descending by default: the most recent record is the interesting one. */
@@ -44,8 +51,13 @@ export interface RegistrySources {
 }
 
 /**
- * Parses `Entity[:orderField[:asc|desc]]` lists, e.g.
- * `LandParcel,Crop:year:desc,Qualification:yearOfPassing`.
+ * Parses `Entity:filterField[:orderField[:asc|desc]]` lists, e.g.
+ * `LandParcel:farmerOsid,Crop:farmerOsid:year:desc`.
+ *
+ * `filterField` is the related entity's OWN field holding the subject's osid
+ * (e.g. "studentOsid") — the same osid `entityReferences` forms a real edge
+ * for in the registry — not the subject's subjectKey (e.g. contactEmail),
+ * which the related entity need not even have.
  */
 function parseRelated(raw: string): RelatedEntitySpec[] {
   return raw
@@ -53,9 +65,10 @@ function parseRelated(raw: string): RelatedEntitySpec[] {
     .map((s) => s.trim())
     .filter(Boolean)
     .map((item) => {
-      const [entity, orderBy, dir] = item.split(':').map((p) => p.trim());
+      const [entity, filterField, orderBy, dir] = item.split(':').map((p) => p.trim());
       return {
         entity,
+        filterField,
         ...(orderBy ? { orderBy } : {}),
         ...(dir?.toLowerCase() === 'asc' ? { ascending: true } : {}),
       };
