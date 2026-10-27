@@ -648,8 +648,10 @@ export class Oid4vciService {
       session = existing;
     }
 
-    // Verify holder proof-of-possession.
-    const proofJwt = body?.proof?.jwt;
+    // Verify holder proof-of-possession. OID4VCI draft 13 moved this from a single
+    // `proof: {jwt}` to a `proofs: {jwt: [...]}` array (one proof per requested key);
+    // accept both shapes, taking the first proof of the newer one.
+    const proofJwt = body?.proof?.jwt ?? body?.proofs?.jwt?.[0];
     if (!proofJwt) throw new BadRequestException('Missing proof.jwt');
     // Nonce inside the proof must be a live, single-use c_nonce.
     const proofClaims = this.decodeJwtClaims(proofJwt);
