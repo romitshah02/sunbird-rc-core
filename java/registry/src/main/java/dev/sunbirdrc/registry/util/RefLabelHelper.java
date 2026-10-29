@@ -27,11 +27,24 @@ public class RefLabelHelper {
 
     /**
      * Generates the edge label for a declared entity-reference field.
+     *
+     * Qualified by the DECLARING entity type, not just the field name: SqlG stores every
+     * edge sharing one label in a single table, with a separate nullable column-pair per
+     * distinct (out-type, in-type) combination it has ever seen under that label. Two
+     * different declaring entities using the same field name (e.g. Records.studentOsid and
+     * Attendance.studentOsid, both -> Student) would otherwise share one label and one table,
+     * and SqlG's generic inVertex()/outVertex() resolution does not reliably pick the right
+     * column-pair for a given row in that case — observed in practice returning a bogus,
+     * null-defaulted vertex (wrong type, id 0) instead of the real referenced vertex. A label
+     * unique per declaring type keeps every label's edges to exactly one (out-type, in-type)
+     * pair, which removes the ambiguity entirely.
+     *
+     * @param declaringEntityType - the entity type whose schema declares this field
      * @param field - the schema field name holding the reference
      * @return
      */
-    public static String getReferenceEdgeLabel(String field) {
-        return REFERENCE_EDGE_PREFIX + field;
+    public static String getReferenceEdgeLabel(String declaringEntityType, String field) {
+        return REFERENCE_EDGE_PREFIX + declaringEntityType + SEPARATOR + field;
     }
 
     /**

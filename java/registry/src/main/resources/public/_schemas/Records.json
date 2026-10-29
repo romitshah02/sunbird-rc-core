@@ -40,7 +40,7 @@
       "_osCreatedAt", "_osUpdatedAt", "_osCreatedBy", "_osUpdatedBy",
       "_osAttestedData", "_osClaimId", "_osState"
     ],
-    "entityReferences": { "studentOsid": "Student" },
+    "ownedReferences": { "studentOsid": "Student" },
     "inviteRoles": ["anonymous"],
     "roles": ["anonymous"]
   }

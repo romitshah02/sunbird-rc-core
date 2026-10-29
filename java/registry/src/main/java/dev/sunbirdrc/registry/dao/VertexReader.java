@@ -11,6 +11,7 @@ import dev.sunbirdrc.registry.sink.DatabaseProvider;
 import dev.sunbirdrc.registry.util.*;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
@@ -220,11 +221,29 @@ public class VertexReader {
         // NOTE: We can load selective vertices, but we don't know the labels
         // here.
         // So in the process, we will have loaded signature nodes as well here
+        //
+        // Reference edges (RefLabelHelper.REFERENCE_EDGE_PREFIX) are excluded: they are a
+        // distinct concern (entityReferences / ownedReferences), handled by
+        // inlineOwnedReferences, not this generic composition walk. Without this exclusion,
+        // this method claims an owned reference's target uuid into visitedUuids first, and
+        // inlineOwnedReferences's own cycle-guard then silently skips it as "already visited".
+        Set<Object> referenceEdgeTargetIds = new HashSet<>();
+        Iterator<Edge> refEdges = vertex.edges(Direction.OUT);
+        while (refEdges.hasNext()) {
+            Edge refEdge = refEdges.next();
+            if (refEdge.label().startsWith(RefLabelHelper.REFERENCE_EDGE_PREFIX)) {
+                referenceEdgeTargetIds.add(refEdge.inVertex().id());
+            }
+        }
+
         Iterator<Vertex> otherVertices = vertex.vertices(Direction.OUT);
 
         int tempCurrLevel = currLevel;
         while (otherVertices.hasNext()) {
             Vertex currVertex = otherVertices.next();
+            if (referenceEdgeTargetIds.contains(currVertex.id())) {
+                continue;
+            }
             if(currVertex.property(Constants.STATUS_KEYWORD).isPresent() &&
                     currVertex.property(Constants.STATUS_KEYWORD).value().equals(Constants.STATUS_INACTIVE)){
                 continue;
@@ -266,6 +285,63 @@ public class VertexReader {
                 }
             }
         }
+    }
+
+    /**
+     * Inlines every entity that OWNS-REFERENCES this vertex (dev.sunbirdrc.registry.util
+     * .OSSchemaConfiguration#ownedReferences), grouped by the referencer's own entity type, so a
+     * read of the target (e.g. Student) embeds its owned children (e.g. Records, Attendance)
+     * directly — no second call needed. Scoped tightly to the edges that feature forms: an edge
+     * whose label starts with RefLabelHelper.REFERENCE_EDGE_PREFIX ("ref_") and carries NO
+     * RefLabelHelper.REFERENCE_EDGE_MARKER property. A MARKED "ref_" edge is the separate,
+     * non-owning entityReferences case (e.g. this vertex's own outgoing reference to another
+     * entity) and must stay invisible on read, exactly as before this method existed.
+     *
+     * @param vertex the vertex being read
+     * @param node the ObjectNode already built for vertex, mutated in place
+     * @param currLevel current recursion depth, same counter constructObject's own expansion uses
+     * @param visitedUuids uuids already visited in this top-level read, to guard against graph cycles —
+     *                     the SAME set instance used elsewhere in this read, not a fresh one
+     */
+    private void inlineOwnedReferences(Vertex vertex, ObjectNode node, int currLevel, Set<String> visitedUuids) {
+        if (!canLoadVertex(currLevel, configurator.getDepth())) {
+            return;
+        }
+        Set<Object> qualifyingIds = new HashSet<>();
+        Iterator<Edge> edges = vertex.edges(Direction.OUT);
+        while (edges.hasNext()) {
+            Edge edge = edges.next();
+            boolean hasPrefix = edge.label().startsWith(RefLabelHelper.REFERENCE_EDGE_PREFIX);
+            boolean hasMarker = edge.property(RefLabelHelper.REFERENCE_EDGE_MARKER).isPresent();
+            if (hasPrefix && !hasMarker) {
+                qualifyingIds.add(edge.inVertex().id());
+            }
+        }
+        if (qualifyingIds.isEmpty()) {
+            return;
+        }
+        Map<String, ArrayNode> byEntityType = new LinkedHashMap<>();
+        Iterator<Vertex> otherVertices = vertex.vertices(Direction.OUT);
+        while (otherVertices.hasNext()) {
+            Vertex referencer = otherVertices.next();
+            if (!qualifyingIds.contains(referencer.id())) {
+                continue;
+            }
+            if (referencer.property(Constants.STATUS_KEYWORD).isPresent()
+                    && referencer.property(Constants.STATUS_KEYWORD).value().equals(Constants.STATUS_INACTIVE)) {
+                continue;
+            }
+            String referencerUuid = databaseProvider.getId(referencer);
+            if (!visitedUuids.add(referencerUuid)) {
+                logger.debug("Already visited vertex {}, skipping to avoid cycle", referencerUuid);
+                continue;
+            }
+            ObjectNode referencerNode = constructObject(referencer);
+            inlineOwnedReferences(referencer, referencerNode, currLevel + 1, visitedUuids);
+            byEntityType.computeIfAbsent(referencer.label(), k -> JsonNodeFactory.instance.arrayNode())
+                    .add(referencerNode);
+        }
+        byEntityType.forEach(node::set);
     }
 
     private void printUuidNodeMap() {
@@ -488,6 +564,8 @@ public class VertexReader {
         if (configurator.getDepth() > 0) {
             loadOtherVertices(rootVertex, currLevel, visitedUuids);
         }
+
+        inlineOwnedReferences(rootVertex, rootNode, currLevel, visitedUuids);
 
         printUuidNodeMap();
 

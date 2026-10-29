@@ -141,6 +141,11 @@ public class RegistryDaoImpl implements IRegistryDao {
 
     public void deleteEntity(Vertex vertex) {
         if (null != vertex) {
+            vertex.edges(Direction.OUT).forEachRemaining(d -> {
+                if (!d.property(RefLabelHelper.REFERENCE_EDGE_MARKER).isPresent()) {
+                    this.deleteEntity(d.inVertex());
+                }
+            });
             vertex.property(Constants.STATUS_KEYWORD, Constants.STATUS_INACTIVE);
             logger.debug("Vertex {} {} marked deleted", vertex.label(), databaseProvider.getId(vertex));
         } else {

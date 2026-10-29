@@ -249,6 +249,7 @@ public class RegistryServiceImpl implements RegistryService {
                 tx = dbProvider.startTransaction(graph);
                 entityId = registryDao.addEntity(graph, rootNode);
                 resolveEntityReferences(dbProvider, graph, vertexLabel, entityId, rootNode.get(vertexLabel));
+                resolveOwnedReferences(dbProvider, graph, vertexLabel, entityId, rootNode.get(vertexLabel));
                 if (vertexLabel.equals(Schema)) {
                     String definitionName = rootNode.get(Schema).get(SchemaName).asText();
                     entityParenter.ensureKnownParenter(definitionName, graph, dbProvider, shard.getShardId());
@@ -325,11 +326,46 @@ public class RegistryServiceImpl implements RegistryService {
                 throw new RecordNotFoundException("referenced " + targetEntityType + " '" + referencedId + "' does not exist");
             }
             Vertex newVertex = vertexReader.getVertex(vertexLabel, entityId);
-            Edge referenceEdge = vertexWriter.addEdge(RefLabelHelper.getReferenceEdgeLabel(field), newVertex, targetVertex);
+            Edge referenceEdge = vertexWriter.addEdge(RefLabelHelper.getReferenceEdgeLabel(vertexLabel, field), newVertex, targetVertex);
             // The label prefix alone is not collision-proof (a field literally named "ref" can
             // produce the same "ref_<uuidPropertyName>" shape as a plain containment edge) — this
             // property is the actual, collision-proof signal cascade-delete checks.
             referenceEdge.property(RefLabelHelper.REFERENCE_EDGE_MARKER, true);
+        }
+    }
+
+    /**
+     * For each schema-declared ownedReferences field present on entityNode, resolves the
+     * referenced target entity (must already exist) and forms a real graph edge from the
+     * target's vertex to this entity's vertex (reversed relative to resolveEntityReferences).
+     * The edge is left unmarked (no REFERENCE_EDGE_MARKER), so it IS cascade-delete eligible:
+     * deleting the target cascades into deleting/inactivating this entity. Throws
+     * RecordNotFoundException (before the caller commits) if a referenced target does not
+     * exist, so the whole write rolls back.
+     */
+    private void resolveOwnedReferences(DatabaseProvider databaseProvider, Graph graph, String vertexLabel, String entityId, JsonNode entityNode) throws RecordNotFoundException {
+        Map<String, String> ownedReferenceFields = definitionsManager.getOwnedReferenceFields(vertexLabel);
+        if (ownedReferenceFields.isEmpty() || entityNode == null) {
+            return;
+        }
+        VertexReader vertexReader = new VertexReader(databaseProvider, graph, ReadConfiguratorFactory.getOne(false), uuidPropertyName, definitionsManager, expandReferenceObj);
+        VertexWriter vertexWriter = new VertexWriter(graph, databaseProvider, uuidPropertyName);
+        for (Map.Entry<String, String> entry : ownedReferenceFields.entrySet()) {
+            String field = entry.getKey();
+            String targetEntityType = entry.getValue();
+            JsonNode valueNode = entityNode.get(field);
+            if (valueNode == null || !valueNode.isValueNode() || StringUtils.isBlank(valueNode.asText())) {
+                continue;
+            }
+            String referencedId = RecordIdentifier.parse(valueNode.asText()).getUuid();
+            Vertex targetVertex = vertexReader.getVertex(targetEntityType, referencedId);
+            if (targetVertex == null || !targetEntityType.equals(targetVertex.label())) {
+                throw new RecordNotFoundException("referenced " + targetEntityType + " '" + referencedId + "' does not exist");
+            }
+            Vertex newVertex = vertexReader.getVertex(vertexLabel, entityId);
+            // Reversed: target -> this entity, and left unmarked so it falls into the same
+            // cascade-delete bucket as plain composition edges.
+            vertexWriter.addEdge(RefLabelHelper.getReferenceEdgeLabel(vertexLabel, field), targetVertex, newVertex);
         }
     }
 
@@ -428,6 +464,7 @@ public class RegistryServiceImpl implements RegistryService {
                 // Re-resolve/form edges for any entityReferences fields present in this update.
                 // Uses rootId (the root entity's own uuid) since entityType/id here may be a child node.
                 resolveEntityReferences(databaseProvider, graph, parentEntityType, rootId, mergedNode.get(parentEntityType));
+                resolveOwnedReferences(databaseProvider, graph, parentEntityType, rootId, mergedNode.get(parentEntityType));
 
                 if (entityType.equals(Schema)) {
                     schemaService.updateSchema(mergedNode);

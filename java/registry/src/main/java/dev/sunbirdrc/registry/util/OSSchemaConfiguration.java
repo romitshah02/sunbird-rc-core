@@ -71,6 +71,8 @@ public class OSSchemaConfiguration {
      * */
     private Map<String, String> entityReferences = new HashMap<>();
 
+    private Map<String, String> ownedReferences = new HashMap<>();
+
     /**
      *
      * Holds attestableFields info,

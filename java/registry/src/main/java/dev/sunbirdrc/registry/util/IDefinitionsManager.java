@@ -87,6 +87,14 @@ public interface IDefinitionsManager {
             return Collections.emptyMap();
         }
     }
+    default Map<String, String> getOwnedReferenceFields(String entity) {
+        Definition entityDefinition = getDefinitionMap().get(entity);
+        if (entityDefinition != null) {
+            return entityDefinition.getOsSchemaConfiguration().getOwnedReferences();
+        } else {
+            return Collections.emptyMap();
+        }
+    }
     default Object getCredentialTemplate(String entityName) {
         return getDefinition(entityName).getOsSchemaConfiguration().getCredentialTemplate();
     }

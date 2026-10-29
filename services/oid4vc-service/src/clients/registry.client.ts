@@ -118,33 +118,48 @@ export class RegistryClient {
     ).then((rows) => rows[0]);
 
     // Related entities are reached by the subject's own osid (the same
-    // reference `entityReferences` forms a real edge for), not by re-matching
-    // subjectKey — a related entity need not even have that field. Must run
-    // after the subject resolves, since its osid is the filter value.
+    // reference `entityReferences`/`ownedReferences` forms a real edge for),
+    // not by re-matching subjectKey — a related entity need not even have
+    // that field. Must run after the subject resolves, since its osid is the
+    // filter value.
     //
     const rawOsid: string | undefined = subject?.['osid'];
     const subjectOsid = rawOsid?.match(
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     )?.[0] ?? rawOsid;
+
+    const configuredNames = new Set(related.map((spec) => spec.entity));
+    const embeddedNames = Object.keys(subject ?? {}).filter(
+      (key) => Array.isArray(subject![key]) && !configuredNames.has(key),
+    );
+    const specFor = (entity: string): RelatedEntitySpec =>
+      related.find((spec) => spec.entity === entity) ?? { entity, filterField: subjectKey };
+    const allNames = [...related.map((spec) => spec.entity), ...embeddedNames];
+
     const relatedRecords = await Promise.all(
-      related.map((spec) =>
-        !subjectOsid
-          ? Promise.resolve([] as Record<string, any>[])
+      allNames.map((entity) => {
+        const spec = specFor(entity);
+        const embedded = subject?.[entity];
+        if (Array.isArray(embedded)) {
+          return Promise.resolve(this.pickOne(embedded, spec));
+        }
+        return !subjectOsid
+          ? Promise.resolve(undefined as Record<string, any> | undefined)
           : this.search(spec.entity, { [spec.filterField]: { eq: subjectOsid } })
               // An entity a deployment has not created answers 4xx. That must not
               // fail issuance of credentials which never needed it: treated as "no
               // records", so the resolver reports any REQUIRED claim it fed as
               // missing, which names the real problem instead of a 500.
               .catch(() => [] as Record<string, any>[])
-              .then((rows) => this.pickOne(rows, spec)),
-      ),
+              .then((rows) => this.pickOne(rows, spec));
+      }),
     );
 
     return {
       subject,
       sources: [
         { entity: subjectEntity, record: subject },
-        ...related.map((spec, i) => ({ entity: spec.entity, record: relatedRecords[i] })),
+        ...allNames.map((entity, i) => ({ entity, record: relatedRecords[i] })),
       ],
     };
   }
