@@ -7,6 +7,7 @@ import { DidModule } from './did/did.module';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { VcModule } from './vc/vc.module';
+import { IssuerModule } from './issuer/issuer.module';
 import { VaultService } from './utils/vault.service';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth/auth.guard';
@@ -18,6 +19,7 @@ import { VaultHealthIndicator } from './utils/vault.health';
   imports: [
     DidModule,
     VcModule,
+    IssuerModule,
     HttpModule,
     ConfigModule.forRoot({
       isGlobal: true,

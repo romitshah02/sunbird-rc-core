@@ -80,6 +80,14 @@ export class TokenService implements OnModuleInit {
     return this.issuerDid;
   }
 
+  // True only when ISSUER_DID was actually set — false for the auto-generated
+  // ephemeral dev fallback above. Lets callers that must never sign with a
+  // throwaway, unmanaged DID (credential issuance) refuse instead of silently
+  // falling back to one, while access-token signing keeps using it either way.
+  hasConfiguredIssuerDid(): boolean {
+    return !!this.config.issuerDid;
+  }
+
   // Mints a short-lived access token bound to an offer session.
   async mintAccessToken(claims: {
     sub: string;

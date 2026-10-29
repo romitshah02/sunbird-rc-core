@@ -94,6 +94,33 @@ describe('VaultService', () => {
     });
   });
 
+  describe('deletePvtKey', () => {
+    it('permanently eliminates the key in vault', async () => {
+      const name = 'example';
+      const path = 'path/to/secret';
+      const response = { data: { deleted: true } };
+
+      jest.spyOn(mockVault, 'eliminateKVSecret').mockResolvedValueOnce(response);
+
+      const result = await vaultService.deletePvtKey(name, path);
+
+      expect(result).toEqual(response);
+      expect(mockVault.eliminateKVSecret).toHaveBeenCalledWith((vaultService as any).token, `${path}/${name}`);
+    });
+
+    it('handles errors and throws InternalServerErrorException', async () => {
+      const name = 'example';
+      jest.spyOn(mockVault, 'eliminateKVSecret').mockRejectedValueOnce(new Error('delete failed'));
+      jest.spyOn(Logger, 'error').mockImplementation();
+
+      await expect(vaultService.deletePvtKey(name)).rejects.toThrowError(InternalServerErrorException);
+      expect(mockVault.eliminateKVSecret).toHaveBeenCalledWith(
+        (vaultService as any).token,
+        `rcw/identity/private_keys/${name}`,
+      );
+    });
+  });
+
   describe('mergePvtKey', () => {
     const name = 'example';
     const path = 'rcw/identity/private_keys';

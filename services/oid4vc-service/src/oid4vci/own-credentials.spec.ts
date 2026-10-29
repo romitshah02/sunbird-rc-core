@@ -55,6 +55,7 @@ describe('advertising only an issuer\'s own credentials', () => {
     const tokens = {
       authorizationServers: () => ['https://issuer.example'],
       getIssuerDid: () => FARMER,
+      hasConfiguredIssuerDid: () => true,
     } as any;
 
     const service = new Oid4vciService(
@@ -64,6 +65,8 @@ describe('advertising only an issuer\'s own credentials', () => {
       tokens,
       {} as any,
       {} as any,
+      {} as any,
+      { enabled: false } as any,
     );
     const metadata = (await service.issuerMetadata()) as Record<string, any>;
     return Object.values(metadata.credential_configurations_supported as Record<string, any>).map(
@@ -100,9 +103,15 @@ describe('advertising only an issuer\'s own credentials', () => {
       new MemoryStoreService() as any,
       {} as any,
       { getOid4vciConfigs: jest.fn().mockResolvedValue(CONFIGS) } as any,
-      { authorizationServers: () => ['https://issuer.example'], getIssuerDid: () => LAND } as any,
+      {
+        authorizationServers: () => ['https://issuer.example'],
+        getIssuerDid: () => LAND,
+        hasConfiguredIssuerDid: () => true,
+      } as any,
       {} as any,
       {} as any,
+      {} as any,
+      { enabled: false } as any,
     );
     const metadata = (await service.issuerMetadata()) as Record<string, any>;
     const names = Object.values(
@@ -141,9 +150,15 @@ describe('advertising only an issuer\'s own credentials', () => {
       new MemoryStoreService() as any,
       {} as any,
       { getOid4vciConfigs: jest.fn().mockResolvedValue(CONFIGS) } as any,
-      { authorizationServers: () => ['https://issuer.example'], getIssuerDid: () => FARMER } as any,
+      {
+        authorizationServers: () => ['https://issuer.example'],
+        getIssuerDid: () => FARMER,
+        hasConfiguredIssuerDid: () => true,
+      } as any,
       {} as any,
       {} as any,
+      {} as any,
+      { enabled: false } as any,
     );
     const metadata = (await service.issuerMetadata()) as Record<string, any>;
 

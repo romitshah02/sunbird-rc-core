@@ -52,6 +52,23 @@ export class VaultService {
     return read.data;
   }
 
+  // Permanently removes a key — all versions and metadata, unrecoverable
+  // (hashi-vault-js's eliminateKVSecret, Vault's DELETE .../metadata/<path>).
+  // Used when a DID is deactivated: the key is never needed again, so it
+  // shouldn't keep existing just because the deactivation flag could in
+  // theory be bypassed by code that reads Vault directly.
+  async deletePvtKey(name: string, path?: string) {
+    try {
+      return await this.vault.eliminateKVSecret(
+        this.token,
+        path ? path + `/${name}` : `rcw/identity/private_keys/${name}`
+      );
+    } catch (err) {
+      Logger.error(err);
+      throw new InternalServerErrorException('Error deleting private key from vault');
+    }
+  }
+
   // Merges new key entries into an existing secret (or creates it).
   // Used when adding an ES256/JWT key to a DID that already holds an Ed25519 key.
   async mergePvtKey(secret: object, name: string, path?: string) {

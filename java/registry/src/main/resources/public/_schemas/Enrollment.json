@@ -2,21 +2,28 @@
   "$schema": "http://json-schema.org/draft-07/schema",
   "type": "object",
   "properties": {
-    "Records": { "$ref": "#/definitions/Records" }
+    "Enrollment": { "$ref": "#/definitions/Enrollment" }
   },
-  "required": ["Records"],
-  "title": "Records",
+  "required": ["Enrollment"],
+  "title": "Enrollment",
   "definitions": {
-    "Records": {
-      "$id": "#/properties/Records",
+    "Enrollment": {
+      "$id": "#/properties/Enrollment",
       "type": "object",
-      "title": "The Records Schema",
-      "required": ["studentOsid", "courseName", "completionStatus", "percentage"],
+      "title": "The Enrollment Schema",
+      "required": ["studentOsid", "academicYear", "courseName", "enrollmentDate", "enrollmentStatus"],
       "properties": {
         "studentOsid": { "type": "string", "title": "Student OSID" },
+        "academicYear": { "type": "string", "title": "Academic Year" },
         "program": { "type": "string", "title": "Program" },
         "courseName": { "type": "string", "title": "Course Name" },
         "enrollmentDate": { "type": "string", "format": "date", "title": "Enrollment Date" },
+        "enrollmentStatus": {
+          "type": "string",
+          "title": "Enrollment Status",
+          "enum": ["ACTIVE", "COMPLETED", "DISCONTINUED", "TRANSFERRED"]
+        },
+        "completionDate": { "type": "string", "format": "date", "title": "Completion Date" },
         "completionStatus": {
           "type": "string",
           "title": "Completion Status",
@@ -27,7 +34,8 @@
           "title": "Percentage",
           "minimum": 0,
           "maximum": 100
-        }
+        },
+        "grade": { "type": "string", "title": "Grade" }
       }
     }
   },
@@ -35,7 +43,7 @@
     "privateFields": [],
     "internalFields": [],
     "signedFields": [],
-    "indexFields": ["studentOsid", "courseName"],
+    "indexFields": ["studentOsid", "academicYear"],
     "systemFields": [
       "_osCreatedAt", "_osUpdatedAt", "_osCreatedBy", "_osUpdatedBy",
       "_osAttestedData", "_osClaimId", "_osState"

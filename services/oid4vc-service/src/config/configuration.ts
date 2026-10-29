@@ -48,6 +48,13 @@ export interface RegistrySources {
    * Empty disables age derivation rather than guessing a field name.
    */
   birthDateField: string;
+  /**
+   * Field on the subject record holding the institute's registry key
+   * (instituteOsid), used to look up that institute's current signing DID.
+   * Empty disables per-institute DID resolution for the self-service path
+   * (falls back to the global ISSUER_DID, today's behavior).
+   */
+  instituteField: string;
 }
 
 /**
@@ -473,6 +480,10 @@ export const loadConfig = (): Oid4vcConfig => ({
       console.warn(`[configuration] ${m}`),
     ),
     birthDateField: process.env.REGISTRY_BIRTHDATE_FIELD || '',
+    // Defaulting to 'instituteOsid' matches Student.json out of the box for
+    // this demo deployment while staying configurable, consistent with every
+    // other field name in RegistrySources.
+    instituteField: (process.env.REGISTRY_INSTITUTE_FIELD || 'instituteOsid').trim(),
   },
   authority: {
     baseUrl: (process.env.AUTHORITY_BASE_URL || '').trim(),

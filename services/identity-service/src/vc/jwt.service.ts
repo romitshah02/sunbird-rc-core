@@ -50,6 +50,9 @@ export class JwtSignerService {
       throw new InternalServerErrorException('Error fetching signerDID');
     }
     if (!identity) throw new NotFoundException('Signer DID not found!');
+    if (identity.deactivated) {
+      throw new BadRequestException(`Signer DID '${signerDID}' is deactivated`);
+    }
 
     const didDoc = this.parseDidDoc(identity);
     const existing = (didDoc.verificationMethod || []).find(
@@ -157,6 +160,9 @@ export class JwtSignerService {
       const did = signerDID || (kid ? kid.split('#')[0] : undefined);
       if (!did) return { verified: false, error: 'No kid header or DID given' };
       const didDoc = await this.didService.resolveDID(did);
+      if (didDoc.deactivated) {
+        return { verified: false, error: `Signer DID '${did}' is deactivated` };
+      }
       const vms = (didDoc.verificationMethod || []).filter(
         (vm: any) => vm?.publicKeyJwk,
       );

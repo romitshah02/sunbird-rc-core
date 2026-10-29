@@ -5,7 +5,7 @@ import { DidService } from './did.service';
 
 describe('DidController', () => {
   let controller: DidController;
-  let didService: { generateDID: jest.Mock; resolveDID: jest.Mock; resolveWebDID: jest.Mock };
+  let didService: { generateDID: jest.Mock; resolveDID: jest.Mock; resolveWebDID: jest.Mock; deactivateDID: jest.Mock };
   let content: any;
   const defaultContent = {
     content: [
@@ -40,6 +40,7 @@ describe('DidController', () => {
             })),
             resolveDID: jest.fn(),
             resolveWebDID: jest.fn(),
+            deactivateDID: jest.fn(),
           }),
         },
       ],
@@ -77,6 +78,13 @@ describe('DidController', () => {
     didService.resolveWebDID.mockResolvedValue({ id: '1234' });
     const result = await controller.resolveWebDID('1234');
     expect(result.id).toEqual('1234');
+  });
+
+  it('should test deactivateDID', async () => {
+    didService.deactivateDID.mockResolvedValue({ id: '1234', deactivated: true });
+    const result = await controller.deactivateDID('1234');
+    expect(didService.deactivateDID).toHaveBeenCalledWith('1234');
+    expect(result.deactivated).toBe(true);
   });
 
   it('should test bulk DID generation', async () => {

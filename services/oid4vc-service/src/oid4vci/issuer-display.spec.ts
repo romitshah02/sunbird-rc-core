@@ -24,6 +24,7 @@ describe('credential issuer display metadata', () => {
     const tokens = {
       authorizationServers: () => ['https://issuer.example'],
       getIssuerDid: () => 'did:web:issuer.example:authority',
+      hasConfiguredIssuerDid: () => true,
     } as any;
 
     const service = new Oid4vciService(
@@ -33,6 +34,8 @@ describe('credential issuer display metadata', () => {
       tokens,
       {} as any,
       {} as any,
+      {} as any,
+      { enabled: false } as any,
     );
     return (await service.issuerMetadata()) as Record<string, any>;
   }

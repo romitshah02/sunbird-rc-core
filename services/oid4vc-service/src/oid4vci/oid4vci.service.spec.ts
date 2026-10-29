@@ -11,6 +11,8 @@ describe('Oid4vciService', () => {
   let schema: any;
   let tokens: any;
   let pop: any;
+  let identity: any;
+  let registry: any;
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
@@ -20,10 +22,14 @@ describe('Oid4vciService', () => {
     schema = { getOid4vciConfigs: jest.fn(), getSchema: jest.fn() };
     tokens = {
       getIssuerDid: jest.fn().mockReturnValue('did:rcw:issuer1'),
+      hasConfiguredIssuerDid: jest.fn().mockReturnValue(true),
       mintAccessToken: jest.fn().mockResolvedValue('minted.access.token'),
       validateAccessToken: jest.fn(),
+      authorizationServers: jest.fn().mockReturnValue(['https://issuer.example']),
     };
     pop = { verifyJwtProof: jest.fn() };
+    identity = { getIssuerDidForInstitute: jest.fn() };
+    registry = { enabled: false, subjectSources: jest.fn() };
   });
 
   afterEach(() => {
@@ -31,7 +37,16 @@ describe('Oid4vciService', () => {
   });
 
   function makeService() {
-    return new Oid4vciService(store as any, credentials, schema, tokens, pop);
+    return new Oid4vciService(
+      store as any,
+      credentials,
+      schema,
+      tokens,
+      pop,
+      undefined as any,
+      identity,
+      registry,
+    );
   }
 
   function makeSchemaConfig(overrides: Partial<Oid4vciSchemaConfig> = {}): Oid4vciSchemaConfig {
@@ -250,6 +265,66 @@ describe('Oid4vciService', () => {
       expect(res.credential_offer.credentials).toEqual(['did:schema:teacher']);
       expect(res.credential_offer.credential_configuration_ids).toBeUndefined();
     });
+
+    it('institute_osid omitted: signs with the global ISSUER_DID, as before', async () => {
+      schema.getOid4vciConfigs.mockResolvedValue([makeSchemaConfig()]);
+      const service = makeService();
+
+      const res: any = await service.createOffer({
+        credential_configuration_id: 'did:schema:teacher',
+        claims: {},
+      });
+
+      const session: any = await store.get(`oid4vc:offer:${res.offer_id}`);
+      expect(session.issuerDid).toEqual('did:rcw:issuer1');
+      expect(identity.getIssuerDidForInstitute).not.toHaveBeenCalled();
+    });
+
+    it('institute_osid provided and resolved: uses the institute DID, not the global one', async () => {
+      schema.getOid4vciConfigs.mockResolvedValue([makeSchemaConfig()]);
+      identity.getIssuerDidForInstitute.mockResolvedValue('did:rcw:institute-1');
+      const service = makeService();
+
+      const res: any = await service.createOffer({
+        credential_configuration_id: 'did:schema:teacher',
+        claims: {},
+        institute_osid: 'INST-1',
+      });
+
+      const session: any = await store.get(`oid4vc:offer:${res.offer_id}`);
+      expect(identity.getIssuerDidForInstitute).toHaveBeenCalledWith('INST-1');
+      expect(session.issuerDid).toEqual('did:rcw:institute-1');
+    });
+
+    it('institute_osid provided but unresolved (404/no-row): falls back to the global ISSUER_DID', async () => {
+      schema.getOid4vciConfigs.mockResolvedValue([makeSchemaConfig()]);
+      identity.getIssuerDidForInstitute.mockResolvedValue(undefined);
+      const service = makeService();
+
+      const res: any = await service.createOffer({
+        credential_configuration_id: 'did:schema:teacher',
+        claims: {},
+        institute_osid: 'INST-unassigned',
+      });
+
+      const session: any = await store.get(`oid4vc:offer:${res.offer_id}`);
+      expect(session.issuerDid).toEqual('did:rcw:issuer1');
+    });
+
+    it('institute_osid unresolved and no ISSUER_DID configured: refuses rather than falling back to the ephemeral DID', async () => {
+      schema.getOid4vciConfigs.mockResolvedValue([makeSchemaConfig()]);
+      identity.getIssuerDidForInstitute.mockResolvedValue(undefined);
+      tokens.hasConfiguredIssuerDid.mockReturnValue(false);
+      const service = makeService();
+
+      await expect(
+        service.createOffer({
+          credential_configuration_id: 'did:schema:teacher',
+          claims: {},
+          institute_osid: 'INST-unassigned',
+        }),
+      ).rejects.toThrow(/no fallback ISSUER_DID is set/);
+    });
   });
 
   describe('getOffer', () => {
@@ -376,7 +451,7 @@ describe('Oid4vciService', () => {
         credential_configuration_id: 'did:schema:teacher',
         claims: { name: 'Alice' },
       });
-      tokens.validateAccessToken.mockResolvedValue({ sub: created.offer_id });
+      tokens.validateAccessToken.mockResolvedValue({ payload: { sub: created.offer_id }, source: 'preauth' });
       return { service, created };
     }
 
@@ -474,7 +549,7 @@ describe('Oid4vciService', () => {
         credential_configuration_id: 'did:schema:teacher',
         claims: { name: 'Alice' },
       });
-      tokens.validateAccessToken.mockResolvedValue({ sub: created.offer_id });
+      tokens.validateAccessToken.mockResolvedValue({ payload: { sub: created.offer_id }, source: 'preauth' });
       const nonce = await service.issueNonce();
       const proofJwt = `${Buffer.from(JSON.stringify({ alg: 'ES256' })).toString('base64url')}.${Buffer.from(
         JSON.stringify({ nonce }),
@@ -514,7 +589,7 @@ describe('Oid4vciService', () => {
       });
       const session = await store.get<any>(`oid4vc:offer:${created.offer_id}`);
       await store.set(`oid4vc:offer:${created.offer_id}`, { ...session, deferredClaimId: 'claim-1' }, 600);
-      tokens.validateAccessToken.mockResolvedValue({ sub: created.offer_id });
+      tokens.validateAccessToken.mockResolvedValue({ payload: { sub: created.offer_id }, source: 'preauth' });
 
       const txId = 'txn-1';
       await store.set(

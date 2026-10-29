@@ -127,6 +127,39 @@ describe('DidService', () => {
     await expect(service.resolveDID('did:x')).rejects.toThrow('Error fetching DID: did:x from db');
   });
 
+  it('deactivates a DID: it stays resolvable, now flagged deactivated, and its Vault key is removed', async () => {
+    const generated = await service.generateDID(doc);
+    const deleteSpy = jest.spyOn(vault, 'deletePvtKey');
+
+    const deactivated = await service.deactivateDID(generated.id);
+    expect(deactivated.deactivated).toBe(true);
+    expect(deleteSpy).toHaveBeenCalledWith(generated.id);
+
+    const resolved = await service.resolveDID(generated.id);
+    expect(resolved.deactivated).toBe(true);
+  });
+
+  it('still deactivates the DID even if deleting its Vault key fails', async () => {
+    const generated = await service.generateDID(doc);
+    jest.spyOn(vault, 'deletePvtKey').mockRejectedValueOnce(new Error('vault down'));
+
+    const deactivated = await service.deactivateDID(generated.id);
+    expect(deactivated.deactivated).toBe(true);
+  });
+
+  it('does not add a deactivated field for a DID that was never deactivated', async () => {
+    const generated = await service.generateDID(doc);
+    const resolved = await service.resolveDID(generated.id);
+    expect(resolved).toEqual(generated);
+    expect('deactivated' in resolved).toBe(false);
+  });
+
+  it('throws NotFoundException when deactivating a DID that does not exist', async () => {
+    await expect(service.deactivateDID('did:does-not-exist')).rejects.toThrow(
+      'DID: did:does-not-exist not found',
+    );
+  });
+
   it('resolve a web DID for given id', async () => {
     service.webDidPrefix = 'did:web:abc.com:resolveweb:';
     doc.method = 'web';

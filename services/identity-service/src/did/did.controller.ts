@@ -68,4 +68,15 @@ export class DidController {
   async resolveWebDID(@Param('id') id: string): Promise<DIDDocument> {
     return await this.didService.resolveWebDID(id);
   }
+
+  @ApiOperation({
+    summary: 'Deactivate a DID (irreversible — revokes signing and verification for this DID)',
+  })
+  @ApiOkResponse({ description: 'DID deactivated' })
+  @ApiNotFoundResponse({ description: 'DID not found' })
+  @ApiParam({ name: 'id', description: 'The DID ID to deactivate' })
+  @Post('/did/:id/deactivate')
+  async deactivateDID(@Param('id') id: string): Promise<DIDDocument> {
+    return await this.didService.deactivateDID(id);
+  }
 }

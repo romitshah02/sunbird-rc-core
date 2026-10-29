@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../utils/prisma.service';
 import { DidService } from '../did/did.service';
 const { DIDDocument } = require('did-resolver');
@@ -63,6 +63,7 @@ export default class VcService {
     }
 
     if (!did) throw new NotFoundException('Signer DID not found!');
+    if (did.deactivated) throw new BadRequestException(`Signer DID '${signerDID}' is deactivated`);
 
     try {
       const didDoc = (JSON.parse(did.didDoc as string) as DIDDocument);
@@ -91,6 +92,10 @@ export default class VcService {
     } catch (err) {
       Logger.error(`Error resolving signer did: `, err);
       throw new InternalServerErrorException(`Error resolving signer did`);
+    }
+    if (didDocument.deactivated) {
+      Logger.warn(`Refusing to verify: signer DID '${signerDID}' is deactivated`);
+      return false;
     }
 
     try {

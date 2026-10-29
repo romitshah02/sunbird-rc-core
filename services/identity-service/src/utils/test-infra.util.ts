@@ -7,6 +7,7 @@ import { VaultService } from './vault.service';
 
 function createInMemoryPrismaMock(): any {
   const store = new Map<string, any>();
+  const issuerStore = new Map<string, any>();
   return {
     identity: {
       create: jest.fn(async ({ data }: any) => {
@@ -15,6 +16,22 @@ function createInMemoryPrismaMock(): any {
         return record;
       }),
       findUnique: jest.fn(async ({ where }: any) => store.get(where.id) ?? null),
+      update: jest.fn(async ({ where, data }: any) => {
+        const existing = store.get(where.id);
+        if (!existing) throw new Error('Record to update not found.');
+        const record = { ...existing, ...data };
+        store.set(where.id, record);
+        return record;
+      }),
+    },
+    issuer: {
+      findUnique: jest.fn(async ({ where }: any) => issuerStore.get(where.instituteOsid) ?? null),
+      upsert: jest.fn(async ({ where, update, create }: any) => {
+        const existing = issuerStore.get(where.instituteOsid);
+        const row = existing ? { ...existing, ...update } : { ...create };
+        issuerStore.set(where.instituteOsid, row);
+        return row;
+      }),
     },
     $disconnect: jest.fn(async () => undefined),
   };
@@ -32,6 +49,10 @@ function createInMemoryVaultMock(): any {
       const merged = { ...(store.get(name) || {}), ...secret };
       store.set(name, merged);
       return merged;
+    }),
+    deletePvtKey: jest.fn(async (name: string) => {
+      const existed = store.delete(name);
+      return { data: { deleted: existed } };
     }),
   };
 }

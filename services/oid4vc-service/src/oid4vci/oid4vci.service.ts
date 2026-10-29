@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -17,6 +18,8 @@ import { loadConfig } from '../config/configuration';
 import { digestMultibase } from '../utils/multibase.util';
 import { normalizeVct, slugifyVct, isAbsoluteHttpUri, vctSlug } from './vct.util';
 import { ClaimSourceFactory } from '../claims/claim-source.factory';
+import { IdentityClient } from '../clients/identity.client';
+import { RegistryClient } from '../clients/registry.client';
 import {
   ClaimSourceNotConfiguredError,
   ClaimSourceUnavailableError,
@@ -82,6 +85,8 @@ export class Oid4vciService {
     // per-type decision, so this service depends on the chooser rather than on any
     // one system of record.
     private readonly claimSources: ClaimSourceFactory,
+    private readonly identity: IdentityClient,
+    private readonly registry: RegistryClient,
   ) {}
 
   /**
@@ -310,6 +315,27 @@ export class Oid4vciService {
     }
   }
 
+  /**
+   * This institute's current signing DID, or the global ISSUER_DID when none is
+   * assigned yet (no Issuer row) or the lookup fails. CRITICAL backward-compat
+   * path: a deployment that has never touched the new Issuer table behaves
+   * exactly as before — PROVIDED ISSUER_DID was actually configured. If it
+   * wasn't, the only fallback left is token.service.ts's auto-generated
+   * ephemeral dev DID, and a credential must never be signed with that
+   * silently — refuse instead. Access-token signing is unaffected: it reads
+   * tokens.getIssuerDid() directly, never routes through this method.
+   */
+  private async resolveIssuerDid(instituteOsid: string | undefined): Promise<string> {
+    const did = instituteOsid ? await this.identity.getIssuerDidForInstitute(instituteOsid) : undefined;
+    if (did) return did;
+    if (!this.tokens.hasConfiguredIssuerDid()) {
+      throw new InternalServerErrorException(
+        'No signing DID is configured for this institute and no fallback ISSUER_DID is set — refusing to issue a credential with an unmanaged, auto-generated DID.',
+      );
+    }
+    return this.tokens.getIssuerDid();
+  }
+
   async createOffer(
     body: {
       credential_configuration_id: string;
@@ -331,6 +357,13 @@ export class Oid4vciService {
        * and nobody can collect a credential without valid Keycloak credentials.
        */
       grant?: 'pre-authorized_code' | 'authorization_code';
+      /**
+       * Which institute this offer is for. Optional and caller-supplied (the
+       * issuer portal/staff UI knows which institute it's acting for) because
+       * nothing in the staff auth context names it today — see resolveIssuerDid.
+       * Omitted = today's behavior: sign with the global ISSUER_DID.
+       */
+      institute_osid?: string;
     },
     authHeader?: string,
   ) {
@@ -445,13 +478,13 @@ export class Oid4vciService {
       schemaVersion: cfg.version,
       schemaName: cfg.name,
       vct: format === 'vc+sd-jwt' ? normalizeVct(cfg.vct, this.config.publicUrl) : undefined,
-      // Sign as the schema's own author DID when it has one — falls back to
-      // the single server-wide ISSUER_DID for schemas authored before this
-      // field existed, or left blank. Every schema already requires an
-      // `author` DID at creation time; this is the first place it's
-      // actually used, rather than every issued credential (regardless of
-      // schema) always carrying the same one hardcoded issuer.
-      issuerDid: cfg.author || this.tokens.getIssuerDid(),
+      // Always sign as this instance's own ISSUER_DID (or, when the caller named
+      // an institute, that institute's current assigned DID), never the schema's
+      // `author`. Schemas can be shared across institute instances (same
+      // shape/VCT), but each instance may only issue credentials for its
+      // own students — signing with a foreign author DID would claim
+      // another institute issued this instance's data.
+      issuerDid: await this.resolveIssuerDid(body.institute_osid),
       claims: body.claims || {},
       preAuthCode,
       txCodeRequired,
@@ -736,6 +769,22 @@ export class Oid4vciService {
       );
     }
 
+    // Which institute this holder belongs to, so the credential is signed with
+    // THAT institute's current DID rather than the process-wide ISSUER_DID.
+    // Registry-specific by nature (an http/authority claim source has no
+    // comparable concept), so resolved directly against RegistryClient rather
+    // than through ClaimSourceProvider. Any failure here falls back to the
+    // global ISSUER_DID — this lookup must never block issuance.
+    let instituteOsid: string | undefined;
+    if (this.registry.enabled && this.config.registrySources.instituteField) {
+      try {
+        const { subject } = await this.registry.subjectSources(subjectId);
+        instituteOsid = subject?.[this.config.registrySources.instituteField];
+      } catch (err) {
+        this.logger.warn(`Could not resolve institute for subject ${subjectId}: ${err}`);
+      }
+    }
+
     const requestedId = body?.credential_configuration_id || body?.credential_identifier;
     // ownConfigs(), not getOid4vciConfigs(): the SAME narrowing the metadata
     // applies, applied to the endpoint that actually mints.
@@ -901,7 +950,7 @@ export class Oid4vciService {
       schemaVersion: cfg.version,
       schemaName: cfg.name,
       vct: format === 'vc+sd-jwt' ? normalizeVct(cfg.vct, this.config.publicUrl) : undefined,
-      issuerDid: cfg.author || this.tokens.getIssuerDid(),
+      issuerDid: await this.resolveIssuerDid(instituteOsid),
       claims,
       // No pre-auth code and no PIN: the Keycloak login already established who
       // this is, which is precisely what a tx_code exists to substitute for.

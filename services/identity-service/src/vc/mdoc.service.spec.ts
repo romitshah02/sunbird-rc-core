@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { NotFoundException, InternalServerErrorException, BadRequestException } from '@nestjs/common';
 import { MdocService } from './mdoc.service';
 import { PrismaService } from '../utils/prisma.service';
 import { VaultService } from '../utils/vault.service';
@@ -69,6 +69,19 @@ describe('MdocService', () => {
     it('throws NotFoundException when the signer DID does not exist', async () => {
       prisma.identity.findUnique.mockResolvedValue(null);
       await expect(service.signMdoc(signerDID, docType, {})).rejects.toThrow(NotFoundException);
+    });
+
+    it('refuses to sign for a deactivated DID', async () => {
+      primeSigner();
+      prisma.identity.findUnique.mockResolvedValue({
+        id: signerDID,
+        didDoc: JSON.stringify({
+          id: signerDID,
+          verificationMethod: [{ id: vmId, type: 'JsonWebKey2020', controller: signerDID, publicKeyJwk }],
+        }),
+        deactivated: true,
+      });
+      await expect(service.signMdoc(signerDID, docType, {})).rejects.toThrow(BadRequestException);
     });
 
     it('throws InternalServerErrorException when the Prisma read fails', async () => {

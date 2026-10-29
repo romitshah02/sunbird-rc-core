@@ -1,4 +1,4 @@
-import { NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
+import { NotFoundException, InternalServerErrorException, BadRequestException, Logger } from '@nestjs/common';
 import * as jose from 'jose';
 import { JwtSignerService } from './jwt.service';
 import { PrismaService } from '../utils/prisma.service';
@@ -88,6 +88,15 @@ describe('JwtSignerService', () => {
     it('throws InternalServerErrorException when the Prisma read fails', async () => {
       prisma.identity.findUnique.mockRejectedValue(new Error('db down'));
       await expect(service.ensureES256Key(signerDID)).rejects.toThrow(InternalServerErrorException);
+    });
+
+    it('refuses to mint a key for a deactivated DID', async () => {
+      prisma.identity.findUnique.mockResolvedValue({
+        id: signerDID,
+        didDoc: JSON.stringify(baseDidDoc()),
+        deactivated: true,
+      });
+      await expect(service.ensureES256Key(signerDID)).rejects.toThrow(BadRequestException);
     });
 
     it('throws when an existing verification method has no matching Vault key', async () => {
@@ -204,6 +213,14 @@ describe('JwtSignerService', () => {
 
       const result = await service.verifyJwt(tampered);
       expect(result.verified).toBe(false);
+    });
+
+    it('refuses to verify against a deactivated DID', async () => {
+      const { jwt, issuerDoc } = await issueJwt();
+      didService.resolveDID.mockResolvedValue({ ...issuerDoc, deactivated: true });
+
+      const result = await service.verifyJwt(jwt);
+      expect(result).toEqual({ verified: false, error: `Signer DID '${signerDID}' is deactivated` });
     });
 
     it('returns verified:false when resolving the DID throws', async () => {

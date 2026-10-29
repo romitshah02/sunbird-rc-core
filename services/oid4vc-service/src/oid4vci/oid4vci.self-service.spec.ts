@@ -17,11 +17,12 @@ describe('Oid4vciService wallet self-service issuance', () => {
   let credentials: any;
   let pop: any;
   let registry: any;
+  let identity: any;
 
   const SCHEMA_ID = 'did:schema:farmer';
 
   const RAVI = {
-    farmer: { farmerId: 'FRM-000123', name: 'Ravi Kumar', gender: 'Male' },
+    farmer: { farmerId: 'FRM-000123', name: 'Ravi Kumar', gender: 'Male', instituteOsid: 'INST-1' },
     parcels: [{ landRecordRef: 'LR-1', landAreaAcres: 4.5, ownershipType: 'Owned' }],
     crops: [{ cropName: 'Wheat', year: 2026 }],
   };
@@ -83,6 +84,7 @@ describe('Oid4vciService wallet self-service issuance', () => {
     };
     tokens = {
       getIssuerDid: jest.fn().mockReturnValue('did:web:issuer.example:authority'),
+      hasConfiguredIssuerDid: jest.fn().mockReturnValue(true),
       mintAccessToken: jest.fn(),
       validateAccessToken: jest.fn(),
       authorizationServers: jest.fn().mockReturnValue(['https://issuer.example/auth']),
@@ -98,6 +100,7 @@ describe('Oid4vciService wallet self-service issuance', () => {
       }),
     };
     registry = { enabled: true, subjectSources: jest.fn() };
+    identity = { getIssuerDidForInstitute: jest.fn() };
   });
 
   afterEach(() => {
@@ -117,6 +120,8 @@ describe('Oid4vciService wallet self-service issuance', () => {
       tokens,
       pop,
       new ClaimSourceFactory(new RegistryClaimSource(registry)),
+      identity,
+      registry,
     );
 
   /**
@@ -218,8 +223,13 @@ describe('Oid4vciService wallet self-service issuance', () => {
       subject: 'FRM-000124',
     });
 
-    expect(registry.subjectSources).toHaveBeenCalledTimes(1);
-    expect(registry.subjectSources).toHaveBeenCalledWith('FRM-000123');
+    // Called twice — once for claims (via the claim-source) and once directly
+    // for institute-DID resolution (see resolveIssuerDid) — but ALWAYS with the
+    // token's own subjectId, never the attacker-supplied body values.
+    expect(registry.subjectSources).toHaveBeenCalledTimes(2);
+    for (const call of registry.subjectSources.mock.calls) {
+      expect(call).toEqual(['FRM-000123']);
+    }
   });
 
   it('refuses cleanly when the account is not linked to a record', async () => {
@@ -384,6 +394,76 @@ describe('Oid4vciService wallet self-service issuance', () => {
       farmerId: 'FRM-000123',
       name: 'Ravi Kumar',
       landAreaAcres: 4.5,
+    });
+  });
+
+  describe('per-institute signing DID', () => {
+    it("signs with the holder's institute DID when the subject record carries instituteOsid and identity-service resolves it", async () => {
+      tokens.validateAccessToken.mockResolvedValue(keycloakToken('FRM-000123'));
+      registry.subjectSources.mockResolvedValue(asSources(RAVI));
+      identity.getIssuerDidForInstitute.mockResolvedValue('did:web:issuer.example:inst-1');
+      const service = makeService();
+
+      await requestCredential(service);
+
+      expect(identity.getIssuerDidForInstitute).toHaveBeenCalledWith('INST-1');
+      expect(credentials.issue.mock.calls[0][0].credential.issuer).toEqual(
+        'did:web:issuer.example:inst-1',
+      );
+    });
+
+    it('falls back to the global ISSUER_DID when the subject has no institute field (critical backward-compat)', async () => {
+      tokens.validateAccessToken.mockResolvedValue(keycloakToken('FRM-000124'));
+      registry.subjectSources.mockResolvedValue(asSources(LAKSHMI));
+      const service = makeService();
+
+      await requestCredential(service);
+
+      expect(identity.getIssuerDidForInstitute).not.toHaveBeenCalled();
+      expect(credentials.issue.mock.calls[0][0].credential.issuer).toEqual(
+        tokens.getIssuerDid(),
+      );
+    });
+
+    it('falls back to the global ISSUER_DID when identity-service has not assigned one yet (404, critical backward-compat)', async () => {
+      tokens.validateAccessToken.mockResolvedValue(keycloakToken('FRM-000123'));
+      registry.subjectSources.mockResolvedValue(asSources(RAVI));
+      identity.getIssuerDidForInstitute.mockResolvedValue(undefined);
+      const service = makeService();
+
+      await requestCredential(service);
+
+      expect(credentials.issue.mock.calls[0][0].credential.issuer).toEqual(
+        tokens.getIssuerDid(),
+      );
+    });
+
+    it('refuses to issue when neither an institute DID nor a configured ISSUER_DID exists (must not sign with the ephemeral fallback)', async () => {
+      tokens.validateAccessToken.mockResolvedValue(keycloakToken('FRM-000123'));
+      registry.subjectSources.mockResolvedValue(asSources(RAVI));
+      identity.getIssuerDidForInstitute.mockResolvedValue(undefined);
+      tokens.hasConfiguredIssuerDid.mockReturnValue(false);
+      const service = makeService();
+
+      await expect(requestCredential(service)).rejects.toThrow(
+        /no fallback ISSUER_DID is set/,
+      );
+    });
+
+    it('skips institute resolution entirely when the registry is disabled, without an extra call (claims still fail per the existing unconfigured-registry behavior)', async () => {
+      // Same disabled-registry setup as 'refuses when the chosen claim source is
+      // the registry and it is unconfigured' above — claims resolution still
+      // fails for that unrelated reason, but the point here is that institute
+      // resolution is skipped (gated on this.registry.enabled) rather than
+      // calling subjectSources on a disabled registry and crashing.
+      registry.enabled = false;
+      tokens.validateAccessToken.mockResolvedValue(keycloakToken('FRM-000123'));
+      const service = makeService();
+
+      await expect(requestCredential(service)).rejects.toThrow(/REGISTRY_BASE_URL is not set/);
+
+      expect(registry.subjectSources).not.toHaveBeenCalled();
+      expect(identity.getIssuerDidForInstitute).not.toHaveBeenCalled();
     });
   });
 });

@@ -228,7 +228,13 @@ export class DidService {
     }
 
     if (artifact) {
-      return JSON.parse(artifact.didDoc as string) as DIDDocument;
+      const doc = JSON.parse(artifact.didDoc as string) as DIDDocument;
+      // Surfaced to every caller of resolveDID (the public resolve endpoints,
+      // and sign()/verify() in vc.service.ts/jwt.service.ts, which both
+      // resolve fresh on every call) — not just an internal flag, so any
+      // third-party resolver/verifier sees it too, per W3C DID Core. Only
+      // added when true, so an active DID's document shape is unchanged.
+      return artifact.deactivated ? { ...doc, deactivated: true } : doc;
     } else {
       throw new NotFoundException(`DID: ${id} not found`);
     }
@@ -237,5 +243,32 @@ export class DidService {
   async resolveWebDID(id: string): Promise<DIDDocument> {
     const webDidId = this.getWebDidIdForId(id);
     return this.resolveDID(webDidId);
+  }
+
+  // Marks a DID deactivated. Does not delete the Identity row or its Vault
+  // key — the document must stay resolvable (with deactivated: true) so
+  // resolvers/verifiers can see why it's no longer trusted, per W3C DID Core.
+  // Irreversible by design: there is no reactivate, matching the "revoke on
+  // compromise" use case this exists for.
+  async deactivateDID(id: string): Promise<DIDDocument> {
+    try {
+      await this.prisma.identity.update({
+        where: { id },
+        data: { deactivated: true },
+      });
+    } catch (err) {
+      Logger.error(`Error deactivating DID: ${id}, ${err}`);
+      throw new NotFoundException(`DID: ${id} not found`);
+    }
+    // Best-effort: the deactivated flag (just persisted above) is what
+    // actually blocks sign()/verify() everywhere, so a Vault failure here
+    // must not undo or fail the deactivation itself — it only means the
+    // now-unusable key keeps sitting in Vault until this is retried.
+    try {
+      await this.vault.deletePvtKey(id);
+    } catch (err) {
+      Logger.error(`Error deleting Vault key for deactivated DID: ${id}, ${err}`);
+    }
+    return this.resolveDID(id);
   }
 }

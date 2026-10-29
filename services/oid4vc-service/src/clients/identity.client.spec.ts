@@ -143,4 +143,30 @@ describe('IdentityClient', () => {
       await expect(client.getJwks()).rejects.toBe(err);
     });
   });
+
+  describe('getIssuerDidForInstitute', () => {
+    it('GETs the URL-encoded institute and returns res.data.did on 200', async () => {
+      http.axiosRef.get.mockResolvedValue({ data: { did: 'did:rcw:institute-1' } });
+      const result = await client.getIssuerDidForInstitute('INST-1');
+      expect(http.axiosRef.get).toHaveBeenCalledWith(
+        'http://identity.example/issuer/INST-1',
+      );
+      expect(result).toEqual('did:rcw:institute-1');
+    });
+
+    it('returns undefined without logging an error on 404', async () => {
+      const err: any = new Error('not found');
+      err.response = { status: 404 };
+      http.axiosRef.get.mockRejectedValue(err);
+      const result = await client.getIssuerDidForInstitute('INST-missing');
+      expect(result).toBeUndefined();
+    });
+
+    it('returns undefined (does not throw) on a network/500 error', async () => {
+      const err: any = new Error('connection refused');
+      http.axiosRef.get.mockRejectedValue(err);
+      const result = await client.getIssuerDidForInstitute('INST-1');
+      expect(result).toBeUndefined();
+    });
+  });
 });

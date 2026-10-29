@@ -74,4 +74,26 @@ export class IdentityClient {
     const res = await this.http.axiosRef.get(`${this.baseUrl}/.well-known/jwks.json`);
     return res.data;
   }
+
+  /**
+   * Current signing DID identity-service has assigned to an institute, or
+   * undefined when none is assigned (404) or the lookup itself fails — callers
+   * must treat either as "fall back to the global ISSUER_DID", never throw.
+   */
+  async getIssuerDidForInstitute(instituteOsid: string): Promise<string | undefined> {
+    try {
+      const res = await this.http.axiosRef.get(
+        `${this.baseUrl}/issuer/${encodeURIComponent(instituteOsid)}`,
+      );
+      return res.data?.did;
+    } catch (err: any) {
+      if (err?.response?.status !== 404) {
+        // Anything other than "not assigned yet" is worth a log line, but must
+        // still fail OPEN to the global ISSUER_DID — this lookup must never be
+        // the reason issuance breaks in an otherwise-working deployment.
+        this.logger.error(`Error resolving issuer DID for institute ${instituteOsid}: ${err}`);
+      }
+      return undefined;
+    }
+  }
 }

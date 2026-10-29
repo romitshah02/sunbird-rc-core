@@ -15,4 +15,16 @@ model Identity {
   id               String  @id
   didDoc           Json
   blockchainStatus Boolean @default(false)
+  // Deactivated per W3C DID Core (https://www.w3.org/TR/did-core/#did-document-metadata):
+  // resolveDID() still returns the document (so resolvers/verifiers can see
+  // the flag), but signing and verification both refuse a deactivated DID.
+  deactivated      Boolean @default(false)
+}
+
+// Thin, swappable pointer: "which DID is currently assigned to institute X".
+// Deliberately separate from Identity (which stores actual DID documents) —
+// this table only tracks the current assignment, never generates keys/DIDs.
+model Issuer {
+  instituteOsid String @id
+  currentDid    String
 }

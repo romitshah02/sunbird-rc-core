@@ -80,9 +80,15 @@ describe('issuing only an issuer\'s own credentials', () => {
       new MemoryStoreService() as any,
       {} as any,
       { getOid4vciConfigs: jest.fn().mockResolvedValue(CONFIGS) } as any,
-      { authorizationServers: () => ['https://issuer.example'], getIssuerDid: () => SCHOOL } as any,
+      {
+        authorizationServers: () => ['https://issuer.example'],
+        getIssuerDid: () => SCHOOL,
+        hasConfiguredIssuerDid: () => true,
+      } as any,
       {} as any,
       claimSources,
+      {} as any,
+      { enabled: false } as any,
     );
     return service.buildSelfServiceSession(
       { subjectId: 'NAT-70022345', raw: {} } as any,

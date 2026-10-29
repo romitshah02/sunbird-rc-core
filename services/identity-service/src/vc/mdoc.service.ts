@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../utils/prisma.service';
 import { VaultService } from '../utils/vault.service';
 import { Identity } from '@prisma/client';
@@ -35,6 +35,9 @@ export class MdocService {
       throw new InternalServerErrorException('Error fetching signerDID');
     }
     if (!did) throw new NotFoundException('Signer DID not found!');
+    if (did.deactivated) {
+      throw new BadRequestException(`Signer DID '${signerDID}' is deactivated`);
+    }
 
     const didDoc = JSON.parse(did.didDoc as string);
     const vm = (didDoc.verificationMethod || []).find((v: any) => v.type === 'JsonWebKey2020');

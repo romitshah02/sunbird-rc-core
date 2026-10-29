@@ -1,4 +1,4 @@
-import { NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { NotFoundException, InternalServerErrorException, BadRequestException } from '@nestjs/common';
 import VcService from './vc.service';
 import { PrismaService } from '../utils/prisma.service';
 import { DidService } from '../did/did.service';
@@ -106,6 +106,22 @@ describe('VcService', () => {
       await expect(
         service.getSuite({ type: 'RsaVerificationKey2018' }, 'Ed25519Signature2020'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('deactivation', () => {
+    it('refuses to sign with a deactivated DID', async () => {
+      const toDeactivate = await didService.generateDID({ alsoKnownAs: [], services: [], method: 'test' });
+      await didService.deactivateDID(toDeactivate.id);
+      await expect(service.sign(toDeactivate.id, signPayload)).rejects.toThrow(BadRequestException);
+    });
+
+    it('fails verification against a deactivated DID, even for a signature made before deactivation', async () => {
+      const toDeactivate = await didService.generateDID({ alsoKnownAs: [], services: [], method: 'test' });
+      const signed = await service.sign(toDeactivate.id, signPayload);
+      await didService.deactivateDID(toDeactivate.id);
+      const verified = await service.verify(toDeactivate.id, signed);
+      expect(verified).toBe(false);
     });
   });
 
