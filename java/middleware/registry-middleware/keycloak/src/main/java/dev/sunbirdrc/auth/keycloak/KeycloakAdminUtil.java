@@ -55,14 +55,24 @@ public class KeycloakAdminUtil implements IdentityManager {
                                 // UserRepresentation) know about — strict Jackson would throw
                                 // UnrecognizedPropertyException on every such response instead
                                 // of just ignoring the field, as any client should.
-                                .register((ContextResolver<ObjectMapper>) type -> {
-                                    ObjectMapper mapper = new ObjectMapper();
-                                    mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-                                    return mapper;
-                                })
+                                .register(new LenientObjectMapperResolver())
                                 .build()
                 )
                 .build();
+    }
+
+    // A real class, not a lambda: RESTEasy reflects on the registered
+    // provider's generic interface (ContextResolver<ObjectMapper>) to learn
+    // what type it resolves, and explicitly refuses lambdas for this
+    // ("RESTEASY004097: Registering a context resolver doesn't support
+    // lambdas") since a lambda's synthetic class carries no such generic info.
+    private static class LenientObjectMapperResolver implements ContextResolver<ObjectMapper> {
+        @Override
+        public ObjectMapper getContext(Class<?> type) {
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            return mapper;
+        }
     }
 
     @Override

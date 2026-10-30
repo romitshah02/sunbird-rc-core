@@ -14,6 +14,7 @@
       "required": ["studentName", "instituteOsid"],
       "properties": {
         "studentName": { "type": "string", "title": "Student Name" },
+        "studentId": { "type": "string", "title": "Student ID" },
         "age": { "type": "integer", "title": "Age" },
         "gender": { "type": "string", "title": "Gender" },
         "contactEmail": { "type": "string", "title": "Contact Email" },
@@ -38,7 +39,7 @@
     "privateFields": [],
     "internalFields": [],
     "signedFields": [],
-    "indexFields": ["studentName", "instituteOsid"],
+    "indexFields": ["studentName", "instituteOsid", "studentId"],
     "systemFields": [
       "_osCreatedAt", "_osUpdatedAt", "_osCreatedBy", "_osUpdatedBy",
       "_osAttestedData", "_osClaimId", "_osState"
