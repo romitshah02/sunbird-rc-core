@@ -161,6 +161,7 @@ public class KeycloakAdminUtil implements IdentityManager {
         }
         newUser.setGroups(Collections.singletonList(createUserRequest.getEntity()));
         newUser.setEmail(createUserRequest.getEmail());
+        newUser.setEmailVerified(true);
         newUser.singleAttribute(MOBILE_NUMBER, createUserRequest.getMobile());
         newUser.singleAttribute(EMAIL, createUserRequest.getEmail());
         newUser.singleAttribute(ENTITY, createUserRequest.getEntity());
