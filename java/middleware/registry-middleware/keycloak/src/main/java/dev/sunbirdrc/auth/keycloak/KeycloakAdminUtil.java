@@ -1,5 +1,7 @@
 package dev.sunbirdrc.auth.keycloak;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.sunbirdrc.pojos.ComponentHealthInfo;
 import dev.sunbirdrc.registry.identity_providers.pojos.*;
 import dev.sunbirdrc.pojos.HealthIndicator;
@@ -18,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import javax.ws.rs.NotFoundException;
 import javax.ws.rs.core.Response;
+import javax.ws.rs.ext.ContextResolver;
 
 import static dev.sunbirdrc.registry.middleware.util.Constants.CONNECTION_FAILURE;
 import static dev.sunbirdrc.registry.middleware.util.Constants.SUNBIRD_KEYCLOAK_SERVICE_NAME;
@@ -46,7 +49,18 @@ public class KeycloakAdminUtil implements IdentityManager {
                 .clientSecret(configuration.getClientSecret())
                 .resteasyClient(
                         new ResteasyClientBuilder()
-                                .connectionPoolSize(configuration.getHttpMaxConnections()).build()
+                                .connectionPoolSize(configuration.getHttpMaxConnections())
+                                // Keycloak's admin REST responses carry fields newer than this
+                                // client's Keycloak-provided representation classes (e.g.
+                                // UserRepresentation) know about — strict Jackson would throw
+                                // UnrecognizedPropertyException on every such response instead
+                                // of just ignoring the field, as any client should.
+                                .register((ContextResolver<ObjectMapper>) type -> {
+                                    ObjectMapper mapper = new ObjectMapper();
+                                    mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                                    return mapper;
+                                })
+                                .build()
                 )
                 .build();
     }
